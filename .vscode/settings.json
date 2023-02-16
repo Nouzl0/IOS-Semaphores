@@ -1,0 +1,9 @@
+{
+    "C_Cpp.errorSquiggles": "disabled",
+    "files.associations": {
+        "process_tree.h": "c",
+        "process_table.h": "c",
+        "types.h": "c",
+        "wait.h": "c"
+    }
+}
