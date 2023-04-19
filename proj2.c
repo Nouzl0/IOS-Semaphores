@@ -40,8 +40,8 @@ int main(int argc, char *argv[])
     //}
 
 
-    // [1] - program creates shared memory for process table and initialize semaphores
-    
+
+    // [1] - program creates shared memory for process table and initialize semaphores    
     // get max number of processes and create process table with max number of processes
     int max_p_num = (arg_nz > arg_nu) ? arg_nz : arg_nu;  
     PTList *list = PT_Init(P_TYPE_NUM, max_p_num);             
@@ -55,12 +55,14 @@ int main(int argc, char *argv[])
     // initialze shared memory data
     int err_ret;
     err_ret = SM_CounterInit(list->shared_data);
+    err_ret = SM_WaitInit(list->shared_data, list->init_pid.pid, (arg_nz + arg_nu));
 
     // check if the shared memory data was initialized
     if (err_ret != 0) {
-        fprintf(stderr, "[%s] - Error while initializing counter-semaphores\n", PROGRAM_NAME);
+        fprintf(stderr, "[%s] - Error while initializing semaphores\n", PROGRAM_NAME);
         return 1;
     }
+
 
 
     // [2] - main process creates nz number of customer processes and nu number of officer processes
@@ -74,6 +76,8 @@ int main(int argc, char *argv[])
         PT_ProcessCreate(list, "Z");
     }    
 
+
+
     // [3] - then main process sleeps for random ammount of time between f/2 and f miliseconds
     if (is_init_pid(list)) {
 
@@ -83,29 +87,39 @@ int main(int argc, char *argv[])
             return 1;
         }
 
+        // the main process prints "A: closing\n"
         SM_CounterPrint(list->shared_data, "closing");
-    }
+    }  
 
-
-
-
-
-
-    // debug -> print process table
-    if (is_init_pid(list)) {
-        PT_PrintList(list);
-        print("")
-    }
     
 
-    // then main process sleeps for random ammount of time between f/2 and f miliseconds
-    // the main process prints "A: closing\n"
-    // then main process waits for all processes to finish
+    // debug
+    ran_msec_sleep(0, 2000);
 
 
 
-    // [?] - destroy existing data structures
-    SM_CounterDestroy(list->shared_data);
+
+    //[4] - main process waits for all processes to finish and then destroys all semaphores and shared memory
+    // main process, waits for all processes to finish
+    SM_WaitForAll(list->shared_data);
+        
+    // destroy existing data structures
+    if (is_init_pid(list)) {
+        
+        // debug -> print process table
+        PT_PrintList(list);
+
+        // destroy existing data structures
+        SM_CounterDestroy(list->shared_data);
+        SM_WaitDestroy(list->shared_data);
+    
+    } else {
+
+        // debug -> print process id
+        char buffer[100] = {0};
+        sprintf(buffer, "Ending process = %d", getpid());
+        SM_CounterPrint(list->shared_data, buffer);
+    }
 
     return 0;
 }

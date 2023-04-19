@@ -90,12 +90,12 @@ typedef struct SM_Counter {
 } SM_Counter;
 
 typedef struct SM_Wait{
-    unsigned int data;
-    PTSemaohoreState sem_state;
     sem_t sem;
-    int process_ended;
+    PTSemaphoreState sem_state;
+    pid_t waiting_pid;
+    int processes_passed;
     int process_count;
-}
+} SM_Wait;
 
 /* Definition of semaphores in process table */
 //typedef struct PTListSemaphores {
@@ -153,6 +153,7 @@ typedef struct PTListTag {
 /* Shared data of a process in process table -> added by user */
 typedef struct PTListData {
     struct SM_Counter cnt;             // basic counter used by multiple processes
+    struct SM_Wait wait;               // basic wait used by multiple processes
 } *PTListDataPtr;
 
 /**
@@ -225,13 +226,13 @@ int SM_CounterDestroy(PTListDataPtr shared_data);
 
 
 /* initialize wait semaphores*/
-int SM_WaitInit(PTListDataPtr shared_data);
+int SM_WaitInit(PTListDataPtr shared_data, pid_t waiting_process_id ,int process_count);
 
 /* process waits for all processes to end*/
-int SM_WaitForAll(PTListDataPtr shared_data, pid_t process_id);
+int SM_WaitForAll(PTListDataPtr shared_data);
 
 /* Synchronizes all the processes */
-int PT_WaitDestroy(PTListDataPtr shared_data);
+int SM_WaitDestroy(PTListDataPtr shared_data);
 
 
 /* - - - - - - - - - - */

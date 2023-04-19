@@ -223,7 +223,7 @@ extern void PT_ProcessCreate(PTList *list, char *tag)
 
 
 /* - - - - - - - - - - - */
-/*   CONTOROL FUNCTIONS  */
+/*       SM_COUNTER      */
 /* - - - - - - - - - - - */
 
 /* initialize counter */
@@ -301,14 +301,90 @@ int SM_CounterDestroy(PTListDataPtr shared_data)
 }
 
 
+/* - - - - - - - - - - - */
+/*        SM_WAIT        */
+/* - - - - - - - - - - - */
+
 /* initialize wait semaphores*/
-int SM_WaitInit(PTListDataPtr shared_data);
+int SM_WaitInit(PTListDataPtr shared_data, pid_t waiting_process_id ,int process_count)
+{
+    // semaphore is already initialised
+    if (shared_data->wait.sem_state == SEM_IN_INIT || shared_data->wait.sem_state == SEM_INIT) {
+        fprintf(stderr, "ERROR - SM_WaitInit, semaphore is already initialised\n");
+        return -1;
+    }
+
+    // initialising semaphore
+    if (sem_init(&(shared_data->wait.sem), 0, 0) == -1) {
+        fprintf(stderr, "ERROR - SM_WaitInit, sem_init failed\n");
+        return -1;
+    }
+
+    // initialising wait data
+    shared_data->wait.sem_state = SEM_INIT;
+    shared_data->wait.waiting_pid = waiting_process_id;
+    shared_data->wait.process_count = process_count;
+    shared_data->wait.processes_passed = 0;
+
+    return 0;
+}
 
 /* process waits for all processes to end*/
-int SM_WaitForAll(PTListDataPtr shared_data, pid_t process_id);
+int SM_WaitForAll(PTListDataPtr shared_data)
+{   
+    // check if data is initialised
+    if (shared_data->wait.sem_state != SEM_INIT) {
+        fprintf(stderr, "ERROR - SM_WaitForAll, semaphore is not initialised\n");
+        return -1;
+    }
+
+    // sleep process with the given id
+    if ((getpid() == shared_data->wait.waiting_pid) && (shared_data->wait.processes_passed < shared_data->wait.process_count)) {
+        
+        // sleep the target process
+        if (sem_wait(&(shared_data->wait.sem)) == -1) {
+            fprintf(stderr, "ERROR - SM_WaitForAll, sem_wait failed\n");
+            return -1;
+        }
+    
+        // sleep the process for short time after waking up
+        msec_sleep(10);
+
+    // increment number of processes that passed the semaphore
+    } else {
+        
+        // if procceses passed is equal to the number of processes free the semaphore
+        if (shared_data->wait.processes_passed == shared_data->wait.process_count) {    
+            if (sem_post(&(shared_data->wait.sem)) == -1) {
+                fprintf(stderr, "ERROR - SM_WaitForAll, sem_post failed\n");
+                return -1;
+            }
+        
+        // increment number of processes that passed the semaphore
+        } else {
+            shared_data->wait.processes_passed++;
+        }
+    }
+
+    return 0;
+}
 
 /* Synchronizes all the processes */
-int PT_WaitDestroy(PTListDataPtr shared_data);
+int SM_WaitDestroy(PTListDataPtr shared_data)
+{
+    // destroy semaphore
+    if (sem_destroy(&(shared_data->wait.sem)) == -1) {
+        fprintf(stderr, "ERROR - PT_WaitDestroy, sem_destroy failed\n");
+        return -1;
+    }
+
+    // unset wait data
+    shared_data->wait.sem_state = SEM_NOT_INIT;
+    shared_data->wait.process_count = 0;
+    shared_data->wait.processes_passed = 0;
+
+    return 0;
+}
 
 /**
  * Synchronises all processes in the list
