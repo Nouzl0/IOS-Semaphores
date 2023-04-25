@@ -1,4 +1,11 @@
+/** @file process_table.h
+ *  @author Nikolas Nosál (xnosal01@stud.fit.vutbr.cz)
+ *  @date 2023-04-24
+ */
+
 #pragma once
+
+
 
 /* - - - - - - - - */
 /*    LIBRARIES    */
@@ -20,6 +27,7 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 // linux semaphore libs
 #include <semaphore.h>
@@ -28,6 +36,7 @@
 
 // remove later maybe
 #include <sys/shm.h>
+
 
 
 /* - - - - - - - - - - - -*/
@@ -71,12 +80,6 @@ typedef enum {
 } PTSemaphoreState;
 
 
-
-
-
-
-
-
 /* - - - - - - - - - - - - */
 /*   PT_LIST SHARED DATA   */
 /* - - - - - - - - - - - - */
@@ -90,24 +93,36 @@ typedef struct SM_Counter {
 } SM_Counter;
 
 typedef struct SM_Wait{
+    
+    /* synchronisation data*/
     sem_t sem;
     PTSemaphoreState sem_state;
     pid_t waiting_pid;
     int processes_passed;
     int process_count;
+    /* mutex lock data*/
+    sem_t mutex;
 } SM_Wait;
 
-/* Definition of semaphores in process table */
-//typedef struct PTListSemaphores {
-//    // semaphore for synchronize_all function
-//    struct PTSemaphore synchronize_all;
-//    // semaphores for synchronize_tag_one function
-//    struct PTSemaphore synchronize_tag_one_a;
-//    struct PTSemaphore synchronize_tag_one_b;
-//    struct PTSemaphore synchronize_tag_one_c;
-//
-//} *PTListSemaphoresPtr;
 
+typedef struct SM_Office {
+    int is_open; 
+    
+    // service 1
+    sem_t sem_1;
+    int sem_1_count;
+    unsigned int timeout_1;
+
+    // service 2
+    sem_t sem_2;
+    int sem_2_count;
+    unsigned int timeout_2;
+
+    // service 3
+    sem_t sem_3;
+    int sem_3_count;
+    unsigned int timeout_3;
+} SM_Office;
 
 
 /* - - - - - - - - - - - */
@@ -153,7 +168,7 @@ typedef struct PTListTag {
 /* Shared data of a process in process table -> added by user */
 typedef struct PTListData {
     struct SM_Counter cnt;             // basic counter used by multiple processes
-    struct SM_Wait wait;               // basic wait used by multiple processes
+    struct SM_Office office;           // office data needed for the given task (office)
 } *PTListDataPtr;
 
 /**
@@ -171,6 +186,7 @@ typedef struct PTList {
     size_t t_size;
     // max number of processes in one tag
     size_t p_size;
+
     // number of tags in the list
     unsigned int t_num;
 
@@ -189,31 +205,26 @@ typedef struct PTList {
 extern PTList* PT_Init(size_t t_size, size_t p_size); 
 
 /* Cleares all memory and kills all the child processes */
-//extern void PT_Dispose(PTList **list);    
-
+extern int PT_Destroy(PTList **list); 
 
 
 /* - - - - - - - - - - - - - - - */
 /*   PT_PROCESS BASIC FUNCTIONS  */
 /* - - - - - - - - - - - - - - - */
 
-/* Searches for process with key and returns pointer to it */
-extern void PT_ProcessSearch(PTList *list, pid_t in_pid, PTListTagPtr ret_tag, PTProcessPtr ret_process);
+/* Seaches for process and returns it's tag and it's position in the 2d array */
+extern int PT_ProcessSearch(PTList *list, pid_t pid, char *tag, int *tag_num, int *pro_num);
 
 /* Creates process in process table with no data */
 extern void PT_ProcessCreate(PTList *list, char *tag);
 
-/* Kills and deletes a process in the process table */
-//extern void PT_ProcessDelete(PTList *list, char *string);   
-
-/* Kills and deletes all processes in the process table */
-//extern void PT_ProcessDeleteAll(PTList *list);   
+/* Checks if process is in the given tag */
+extern int PT_IsTag(PTList *list, char *tag);
 
 
-
-/* - - - - - - - - - - - - - - - - */
-/*      SHARED DATA FUNCTIONS      */
-/* - - - - - - - - - - - - - - - - */
+/* - - - - - - - - - - - - - - - - - - */
+/*         SM_COUNTER FUNCTIONS        */
+/* - - - - - - - - - - - - - - - - - - */
   
 /* initialize counter */
 int SM_CounterInit(PTListDataPtr shared_data);
@@ -224,6 +235,33 @@ int SM_CounterPrint(PTListDataPtr shared_data, char *message);
 /* destroy semaphores in counter*/
 int SM_CounterDestroy(PTListDataPtr shared_data);
 
+ 
+/* - - - - - - - - - - - - - - - - - - */
+/*          SM_OFFICE FUNCTIONS        */
+/* - - - - - - - - - - - - - - - - - - */
+
+/* initialize office data */
+int SM_OfficeInit(PTListDataPtr shared_data);
+
+/* destroy office data */
+int SM_OfficeDestroy(PTListDataPtr shared_data);
+
+/* set office to close-state*/
+void SM_OfficeClose(PTListDataPtr shared_data);
+
+/* officer takes a break -> used by serve*/
+int SM_OfficeBreak(PTListDataPtr shared_data, int process_id, unsigned int max_break_time);
+
+/* officer servers a servis */
+int SM_OfficeServe(PTListDataPtr shared_data, int process_id, unsigned int max_break_time);
+
+/* customer gets service he desires*/
+int SM_OfficeService(PTListDataPtr shared_data, int process_id, int type_of_service);
+
+
+/* - - - - - - - - - - - - - - - - - */
+/*          SM_WAIT FUNCTIONS        */
+/* - - - - - - - - - - - - - - - - - */
 
 /* initialize wait semaphores*/
 int SM_WaitInit(PTListDataPtr shared_data, pid_t waiting_process_id ,int process_count);
@@ -243,9 +281,8 @@ int SM_WaitDestroy(PTListDataPtr shared_data);
 extern void PT_PrintList(PTList *list);
 
 
-
 /* - - - - - - - - - - - - - */
-/*      OTHER FUNCTIONS      */
+/*      SLEEP FUNCTIONS      */
 /* - - - - - - - - - - - - - */
 
 /* Makes process sleep for n amount of miliseconds */

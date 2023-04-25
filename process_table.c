@@ -1,16 +1,25 @@
+/** @file process_table.c
+ *  @author Nikolas Nosál (xnosal01@stud.fit.vutbr.cz)
+ *  @date 2023-04-24
+ */
+
 #include "process_table.h"
 
+
+
 /* - - - - - - - - - - - - */
-/*   ST_PROCESS FUNCTIONS  */
+/*   PT_PROCESS FUNCTIONS  */
 /* - - - - - - - - - - - - */
+// Functions which work with process data nodes (PTList)
 
 /**
- * Function creates (PTList), array of (linked lists), were every element in the linked list
- * corespondes to a process.
+ * Function creates (PTList), which is an list with processes and it's data. PTList is a struct with array of tags where, 
+ * each tag contains an array of process data nodes which can contain data about the processes. PTList also contains shared data
+ * of which used by the other functions. Shared data is a data module specifically created for this project.
  * 
  * @param list Pointer to PTlist
- * @param t_size Number of array which will be created
- * @param p_size Number of processes in the array
+ * @param t_size Number of tag nodes which will be created
+ * @param p_size Number of process data nodes which will be created
  * @return Pointer to PTList if successful or NULL pointer if not
  */
 extern PTList* PT_Init(size_t t_size, size_t p_size) 
@@ -59,67 +68,125 @@ extern PTList* PT_Init(size_t t_size, size_t p_size)
 }
 
 /**
- * Deletes process table and kill all the processes.
- * - uses function [ PT_DeleteAll ].
+ * Deallocates the PTList and all it's data.
  * 
- * @param list Pointer to PTlist, which will be deallocated
+ * @param list Pointer to PTlist, which will be deallocated.
  */
-//void PT_Dispose(STList **list)
-//{
-//    // checking if list is empty
-//    if ((*list) == NULL) {
-//        fprintf(stderr ,"ERROR - ST_Dispose, symtable is already empty\n");
-//        return;
-//    }
-//
-//    // deleting symtable
-//    ST_DeleteAll(*list);
-//    free((*list)->array);
-//    (*list)->array = NULL;
-//
-//    // setting list pointer to NULL
-//    free(*list);
-//    *list = NULL;
-//}
+extern int PT_Destroy(PTList **list) 
+{
+    // checking if list is empty
+    if (list == NULL) {
+        fprintf(stderr, "ERROR - PT_Destroy, list is empty\n");
+        return 1;
+    }
 
+    // checking if process is the list proceess
+    if (getpid() != (*list)->init_pid.pid) {
+        return 0;
+    }
 
+    // deallocating all the shared memory
+    int err_val = 0;
+    err_val += munmap((*list)->t_arr->p_arr, (*list)->p_size * sizeof(struct PTListData));
+    err_val += munmap((*list)->t_arr, (*list)->t_size * sizeof(struct PTListTag));
+    err_val += munmap((*list)->shared_data, sizeof(struct PTListData));
+    err_val += munmap(*list, sizeof(PTList));
 
-/* - - - - - - - - - - - - */
-/*   ST_ELEMENT FUNCTIONS  */
-/* - - - - - - - - - - - - */
+    // setting list to NULL
+    *list = NULL;
+    
+    // error handling
+    if (err_val != 0) {
+        fprintf(stderr, "ERROR - PT_Destroy, munmap failed\n");
+        return 1;
+    }
+
+    return 0;
+}
 
 /**
- * Function searches (PT_Process) in the symtable and returns pointer to it
+ * Function checks if the process which passes the function is the process which is saved in the PTList under the given tag.
+ * 
+ * @param list Pointer to PTlist
+ * @param tag String with the tag
+ * @return Returns true(1) if the process is in the list under the given tag or false(0) if not.
  */
-//extern void PT_ProcessSearch(PTList *list, pid_t in_pid, PTListTagPtr ret_tag, PTProcessPtr ret_process) 
-//{
-//    // if list is empty
-//    if (list == NULL) {
-//        fprintf(stderr, "ERROR - PT_ProcessSearch, list is empty\n");
-//        ret_tag = NULL;
-//        ret_process = NULL;
-//        return;
-//    }
-//
-//    // searching the process in the list
-//    for (unsigned int i = 0; i < list->t_size; i++) {
-//        for (unsigned int j = 0; j < list->p_size; j++) {
-//            if (list->t_arr[i].p_arr[j].pid == in_pid) {
-//                ret_tag = &(list->t_arr[i]);
-//                ret_process = &(list->t_arr[i].p_arr[j]);
-//                return;
-//            }
-//        }
-//    }
-//    
-//    // returning NULL if process is not found
-//    ret_tag = NULL;
-//    ret_process = NULL;
-//}
+extern int PT_IsTag(PTList *list, char *tag) {
 
+    // checking if list is empty
+    if (list == NULL) {
+        fprintf(stderr, "ERROR - PT_IsTag, list is empty\n");
+        return 0;
+    }
+    
+    // getting process ID
+    pid_t searched_pid = getpid();
+
+    // searching for tag in the list
+    for (unsigned int i = 0; i < list->t_num; i++) {
+        if (strcmp(list->t_arr[i].key, tag) == 0) {
+            
+            // search for process in the tag
+            for (unsigned int j = 0; j < list->t_arr[i].p_num; j++) {
+                if (list->t_arr[i].p_arr[j].pid == searched_pid) {
+                    return 1;
+                }
+            }
+        }        
+    }
+    return 0;
+}
 
 /**
- * Creates a process in process table with no data
+ * Function which searches for the process in the PTList and returns data about the process, with confirmation if 
+ * the process is in the list.
+ * 
+ * @param list Pointer to PTList
+ * @param pid Process ID of the searched process
+ * @param tag (return), pointer to process tag
+ * @param tag_num (return), pointer to number of tag in the tag array
+ * @param pro_num (return), pointer to number of process in a process array
+ * @return int Function returns(1) if the process is in the list or returns(0) if not.
+ */
+extern int PT_ProcessSearch(PTList *list, pid_t pid, char *tag, int *tag_num, int *pro_num)
+{
+    // checking if table is empty
+    if (list == NULL) {
+        fprintf(stderr, "ERROR - PT_ProcessSearch, list is empty\n");
+        return 0;
+    }
+
+    // check if the given pointers are not NULL
+    if (tag == NULL || tag_num == NULL || pro_num == NULL) {
+        fprintf(stderr, "ERROR - PT_ProcessSearch, one of given pointers is NULL\n");
+        return 0;
+    }
+
+    // searching for tag in the list
+    for (unsigned int i = 0; i < list->t_num; i++) {          
+        // search for process in the tag
+        for (unsigned int j = 0; j < list->t_arr[i].p_num; j++) {
+            if (list->t_arr[i].p_arr[j].pid == pid) {
+                
+                // returning data
+                tag = list->t_arr[i].key;
+                *tag_num = i;
+                *pro_num = j;
+                return 1;
+            }
+        }
+    }        
+    
+    // process not found
+    fprintf(stderr, "ERROR - PT_ProcessSearch, process not found\n");
+    return 0;
+}
+
+/**
+ * Function which creates a new process and adds data about the process to the PTList.
+ * 
+ * @param list Pointer to PTList
+ * @param tag Tag of the process which will be assigned to the new created process
  */
 extern void PT_ProcessCreate(PTList *list, char *tag)
 {   
@@ -205,266 +272,10 @@ extern void PT_ProcessCreate(PTList *list, char *tag)
     }
 }
 
-
 /**
- * Deletes an element in symbol 
- */
-//extern void PT_ProcessDelete(PTList *list, char *string )
-//{
-//}
-
-
-/**
- * Deletes every element in the symbol table
- */
-//extern void PT_DeleteAll(PTList *list) 
-//{   
-//}
-
-
-/* - - - - - - - - - - - */
-/*       SM_COUNTER      */
-/* - - - - - - - - - - - */
-
-/* initialize counter */
-int SM_CounterInit(PTListDataPtr shared_data)
-{
-    // semaphore is already initialised 
-    if (shared_data->cnt.sem_state == SEM_IN_INIT || shared_data->cnt.sem_state == SEM_INIT) {
-        fprintf(stderr, "ERROR - SM_CounterInit, semaphore is already initialised\n");
-        return -1;
-    }
-    
-    // initialising counter data
-    shared_data->cnt.sem_state = SEM_INIT;
-    shared_data->cnt.data = 0;
-    shared_data->cnt.sem_wait_count = 0;
-
-    // initialising semaphore 1
-    if (sem_init(&(shared_data->cnt.sem_1), 0, 1) == -1) {
-        fprintf(stderr, "ERROR - SM_CounterInit, sem_init failed\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-/* print counter-data and increment */
-int SM_CounterPrint(PTListDataPtr shared_data, char *message)
-{
-    // [0] - SEM-WAIT
-    // lost processes are availabled by this data-struct
-    if (shared_data->cnt.sem_wait_count == 2) {
-        sem_post(&(shared_data->cnt.sem_1));
-        ran_msec_sleep(50, 150);
-    }
-
-    // increasing number of sleeping processes
-    shared_data->cnt.sem_wait_count++;
-
-    if (sem_wait(&(shared_data->cnt.sem_1)) == -1) {
-        fprintf(stderr, "ERROR\n");
-    }
-
-    // [1] - PRINT
-    // print message and increment counter
-    printf("%d: %s\n", shared_data->cnt.data++, message);
-
-
-    // [2] - SEMPOST
-
-    // decresing the number of processes
-    shared_data->cnt.sem_wait_count--;
-
-    if (sem_post(&(shared_data->cnt.sem_1)) == -1) {
-        fprintf(stderr, "ERROR - SM_CounterPrint, sem_post failed\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-/* destroy counter-data */
-int SM_CounterDestroy(PTListDataPtr shared_data)
-{
-    // destroy semaphore
-    if (sem_destroy(&(shared_data->cnt.sem_1)) == -1) {
-        fprintf(stderr, "ERROR - SM_CounterDestroy, sem_destroy failed\n");
-        return -1;
-    }
-
-    // unset counter data
-    shared_data->cnt.sem_state = SEM_NOT_INIT;
-    shared_data->cnt.data = 0;
-
-    return 0;
-}
-
-
-/* - - - - - - - - - - - */
-/*        SM_WAIT        */
-/* - - - - - - - - - - - */
-
-/* initialize wait semaphores*/
-int SM_WaitInit(PTListDataPtr shared_data, pid_t waiting_process_id ,int process_count)
-{
-    // semaphore is already initialised
-    if (shared_data->wait.sem_state == SEM_IN_INIT || shared_data->wait.sem_state == SEM_INIT) {
-        fprintf(stderr, "ERROR - SM_WaitInit, semaphore is already initialised\n");
-        return -1;
-    }
-
-    // initialising semaphore
-    if (sem_init(&(shared_data->wait.sem), 0, 0) == -1) {
-        fprintf(stderr, "ERROR - SM_WaitInit, sem_init failed\n");
-        return -1;
-    }
-
-    // initialising wait data
-    shared_data->wait.sem_state = SEM_INIT;
-    shared_data->wait.waiting_pid = waiting_process_id;
-    shared_data->wait.process_count = process_count;
-    shared_data->wait.processes_passed = 0;
-
-    return 0;
-}
-
-/* process waits for all processes to end*/
-int SM_WaitForAll(PTListDataPtr shared_data)
-{   
-    // check if data is initialised
-    if (shared_data->wait.sem_state != SEM_INIT) {
-        fprintf(stderr, "ERROR - SM_WaitForAll, semaphore is not initialised\n");
-        return -1;
-    }
-
-    // sleep process with the given id
-    if ((getpid() == shared_data->wait.waiting_pid) && (shared_data->wait.processes_passed < shared_data->wait.process_count)) {
-        
-        // sleep the target process
-        if (sem_wait(&(shared_data->wait.sem)) == -1) {
-            fprintf(stderr, "ERROR - SM_WaitForAll, sem_wait failed\n");
-            return -1;
-        }
-    
-        // sleep the process for short time after waking up
-        msec_sleep(10);
-
-    // increment number of processes that passed the semaphore
-    } else {
-        
-        // if procceses passed is equal to the number of processes free the semaphore
-        if (shared_data->wait.processes_passed == shared_data->wait.process_count) {    
-            if (sem_post(&(shared_data->wait.sem)) == -1) {
-                fprintf(stderr, "ERROR - SM_WaitForAll, sem_post failed\n");
-                return -1;
-            }
-        
-        // increment number of processes that passed the semaphore
-        } else {
-            shared_data->wait.processes_passed++;
-        }
-    }
-
-    return 0;
-}
-
-/* Synchronizes all the processes */
-int SM_WaitDestroy(PTListDataPtr shared_data)
-{
-    // destroy semaphore
-    if (sem_destroy(&(shared_data->wait.sem)) == -1) {
-        fprintf(stderr, "ERROR - PT_WaitDestroy, sem_destroy failed\n");
-        return -1;
-    }
-
-    // unset wait data
-    shared_data->wait.sem_state = SEM_NOT_INIT;
-    shared_data->wait.process_count = 0;
-    shared_data->wait.processes_passed = 0;
-
-    return 0;
-}
-
-/**
- * Synchronises all processes in the list
- */
-//extern void PT_SynchroniseAll(PTList *list)
-//{
-//    // checking if list is empty
-//    if (list == NULL) {
-//        fprintf(stderr, "ERROR - PT_SynchroniseAll, list is empty\n");
-//        return;
-//    }
-//
-//    // initialising semaphore
-//    bool sem_init_process = false;
-//
-//    if (list->semaphores->synchronize_all.state == SEM_NOT_INIT) {
-//        list->semaphores->synchronize_all.state = SEM_IN_INIT;
-//        sem_init_process = true;
-//    }
-//
-//    // initialising semaphore
-//    if (list->semaphores->synchronize_all.state == SEM_IN_INIT) {
-//
-//        // count the active number of processes
-//        unsigned int active_p = 0;
-//
-//        for (int i = 0; i < list->t_num; i++) {
-//            for (int j = 0; j < list->t_arr[i].p_num; j++) {
-//                if (list->t_arr[i].p_arr[j].state != DEAD) {
-//                    active_p++;
-//                }
-//            }
-//        }
-//
-//        // marking the active processes
-//        if (sem_init_process == true) {
-//            list->semaphores->synchronize_all.running_p = active_p;
-//            list->semaphores->synchronize_all.state = SEM_INIT;
-//            //printf("p_set_up = %d, active_p = %d, sleep_p = %d\n", getpid(), list->semaphores->synchronize_all.running_p, list->semaphores->synchronize_all.sleeping_p);
-//            //fflush(stdout);
-//        }
-//    }
-//
-//
-//
-//    // stopping the process if it is not the last one active
-//    if (((list->semaphores->synchronize_all.running_p - 1) <= list->semaphores->synchronize_all.sleeping_p) && (list->semaphores->synchronize_all.running_p > 0)) {
-//        
-//        // saving the number of sleeping processes
-//        unsigned int sleeping_p = list->semaphores->synchronize_all.sleeping_p;
-//        //printf("\np_wake = %d, active_p = %d, sleep_p = %d\n", getpid(), list->semaphores->synchronize_all.running_p, sleeping_p);
-//        //fflush(stdout);
-//
-//        // resetting the semaphore
-//        list->semaphores->synchronize_all.state == SEM_NOT_INIT;
-//        list->semaphores->synchronize_all.running_p = 0;
-//        list->semaphores->synchronize_all.sleeping_p = 0;
-//
-//        // waking up all the processes
-//        for (int i = 0; i < sleeping_p; i++) {
-//            sem_post(list->semaphores->synchronize_all.sem);
-//        }
-//
-//    // waking up all the processes
-//    } else {
-//        //printf("p_sleep = %d, active_p = %d, sleep_p = %d\n", getpid(), list->semaphores->synchronize_all.running_p, list->semaphores->synchronize_all.sleeping_p);
-//        //fflush(stdout);
-//        list->semaphores->synchronize_all.sleeping_p++;
-//        sem_wait(list->semaphores->synchronize_all.sem);
-//    }
-//}
-
-
-
-/* - - - - - - - - - - */
-/*   DEBUG FUNCTIONS   */
-/* - - - - - - - - - - */
-
-/**
- * Prints the list (debug)
+ * Process will print all the data in the PTlist. Used for debugging.
+ * 
+ * @param list Pointer to PTList.
  */
 extern void PT_PrintList(PTList *list)
 {   
@@ -498,36 +309,371 @@ extern void PT_PrintList(PTList *list)
 
 
 
-/* - - - - - - - - - - */
-/*   OTHER FUNCTIONS   */
-/* - - - - - - - - - - */
+/* - - - - - - - - - - - */
+/*       SM_COUNTER      */
+/* - - - - - - - - - - - */
+// Shared memory - functions which use counter data
+// These functions are used by main() and office functions
 
-/* Makes process sleep for n amount of miliseconds*/
-int msec_sleep(long msec)
+/**
+ * Initializes counter data and semaphores. This function must be called before using any other function.
+ * Also, this function must be called before creating new processes, memory is allocated through mmap().
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @return int returns(0) if the function intiliazes corectly, returns(-1) if the initiliazation fails.
+ */
+int SM_CounterInit(PTListDataPtr shared_data)
 {
-    struct timespec ts;
-    int res = 0;
+    // semaphore is already initialised 
+    if (shared_data->cnt.sem_state == SEM_IN_INIT || shared_data->cnt.sem_state == SEM_INIT) {
+        fprintf(stderr, "ERROR - SM_CounterInit, semaphore is already initialised\n");
+        return -1;
+    }
+    
+    // initialising counter data
+    shared_data->cnt.sem_state = SEM_INIT;
+    shared_data->cnt.data = 0;
+    shared_data->cnt.sem_wait_count = 0;
 
-    // checking errors
-    if (msec < 0)
-    {
-        errno = EINVAL;
+    // initialising semaphore 1
+    if (sem_init(&(shared_data->cnt.sem_1), 1, 1) == -1) {
+        fprintf(stderr, "ERROR - SM_CounterInit, sem_init failed\n");
         return -1;
     }
 
-    // setting nanosleep values to milisecond
-    ts.tv_sec = msec / 1000;
-    ts.tv_nsec = (msec % 1000) * 1000000;
+    return 0;
+}
 
-    // nanosleep executes
-    do {
-        res = nanosleep(&ts, &ts);
-    } while (res && errno == EINTR);
+/**
+ * Function which prints message with counter data and increments the counter.
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @param message Message which will be printed with counter data in the format: "counter: message"
+ * @return int returns(0) if the function intiliazes corectly, returns(-1) if the initiliazation fails.
+ */
+int SM_CounterPrint(PTListDataPtr shared_data, char *message)
+{
+    // [0] - SEM-WAIT
+    // lost processes are availabled by this data-struct
+    if (shared_data->cnt.sem_wait_count == 2) {
+        sem_post(&(shared_data->cnt.sem_1));
+        ran_msec_sleep(50, 150);
+    }
 
+    // increasing number of sleeping processes
+    shared_data->cnt.sem_wait_count++;
+
+    if (sem_wait(&(shared_data->cnt.sem_1)) == -1) {
+        fprintf(stderr, "ERROR\n");
+    }
+
+    // [1] - PRINT
+    // print message and increment counter
+    printf("%d: %s\n", shared_data->cnt.data++, message);
+    fflush(stdout);
+
+    // [2] - SEMPOST
+    // decresing the number of processes
+    shared_data->cnt.sem_wait_count--;
+
+    if (sem_post(&(shared_data->cnt.sem_1)) == -1) {
+        fprintf(stderr, "ERROR - SM_CounterPrint, sem_post failed\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * Function destroys counter data and semaphores.
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @return int return(0) if the semaphore is destroyed correctly, otherwise returns(-1)
+ */
+int SM_CounterDestroy(PTListDataPtr shared_data)
+{
+    // destroy semaphore
+    if (sem_destroy(&(shared_data->cnt.sem_1)) == -1) {
+        fprintf(stderr, "ERROR - SM_CounterDestroy, sem_destroy failed\n");
+        return -1;
+    }
+
+    // unset counter data
+    shared_data->cnt.sem_state = SEM_NOT_INIT;
+    shared_data->cnt.data = 0;
+
+    return 0;
+}
+
+
+
+/* - - - - - - - - - - - - */
+/*        SM_OFFICE        */
+/* - - - - - - - - - - - - */
+// Functions which implements the functionality of project IOS-Synchronizace 2022/2023
+
+/**
+ * Intializes office data and semaphores. This function must be called before using any other function.
+ * Also, this function must be called before creating new processes.
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @return int returns(0) if the function intiliazes corectly, returns(-1) if the initiliazation fails.
+ */
+int SM_OfficeInit(PTListDataPtr shared_data)
+{
+    // initialize all semaphores
+    int err_check = 0;
+    err_check += sem_init(&(shared_data->office.sem_1), 1, 0);
+    err_check += sem_init(&(shared_data->office.sem_2), 1, 0);
+    err_check += sem_init(&(shared_data->office.sem_3), 1, 0);
+
+    if (err_check != 0) {
+        fprintf(stderr, "ERROR - SM_OfficeInit, sem_init failed\n");
+        return -1;
+    }
+
+    // initialising data
+    shared_data->office.is_open = 1;
+    shared_data->office.sem_1_count = 0;
+    shared_data->office.sem_2_count = 0;
+    shared_data->office.sem_3_count = 0;
+
+    return 0;
+}
+
+/**
+ * Function closes the office, sets the office.is_open to closed state (0).
+ * 
+ * @param shared_data Pointer to shared_data.
+ */
+void SM_OfficeClose(PTListDataPtr shared_data)
+{
+    // closing office
+    shared_data->office.is_open = 0;
+}
+
+/**
+ * Function destroys office data and semaphores.
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @return int return(0) if the semaphore is destroyed correctly, otherwise returns(-1) 
+*/
+int SM_OfficeDestroy(PTListDataPtr shared_data)
+{
+
+    // unset data
+    shared_data->office.is_open = 0;
+    shared_data->office.sem_1_count = 0;
+    shared_data->office.sem_2_count = 0;
+    shared_data->office.sem_3_count = 0;
+
+    // destroy semaphores
+    int err_check = 0;
+    err_check += sem_destroy(&(shared_data->office.sem_1));
+    err_check += sem_destroy(&(shared_data->office.sem_2));
+    err_check += sem_destroy(&(shared_data->office.sem_3));
+
+    return 0;
+}
+
+/**
+ * Function used by SM_OfficeServe function. Process which calls this function takes a break, is put to usleep.
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @param process_id Process identifier, but it's not pid_t, it's an another indentification number.
+ * @param max_break_time Maximum random time which the process will be put to sleep.
+ * @return int return(0) if the break occured correctyl, otherwise returns(-1) 
+ */
+int SM_OfficeBreak(PTListDataPtr shared_data, int process_id, unsigned int max_break_time)
+{
+    char buffer[100] = {0};
+    int err_value = 0;
+
+    // take a break
+    sprintf(buffer, "U id%d: taking break", process_id);
+    err_value += SM_CounterPrint(shared_data, buffer);
+
+    // sleep for random time
+    err_value += ran_msec_sleep(0, max_break_time);
+
+    // break is over
+    sprintf(buffer, "U id%d: break finished", process_id);
+    err_value += SM_CounterPrint(shared_data, buffer);
+
+    // check if there was an error
+    if (err_value != 0) {
+        fprintf(stderr, "ERROR - SM_OfficeBreak - Error occured\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * Process which calls this function serves a service to a customer process. (In form of messages).
+ * This function should be called by officer type process. 
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @param process_id Process identifier, but it's not pid_t, it's an another indentification number.
+ * @param max_break_time maximum ammount of time which the process will be put to sleep if it takes a break.
+ * @return int return(0) if the service was served correctly, otherwise returns(-1) 
+ */
+int SM_OfficeServe(PTListDataPtr shared_data, int process_id, unsigned int max_break_time)
+{
+    // check what kind of service is requested
+    int type = 0, num = 0;
+
+    // there should be mutex
+    // choosing the service which is going to be served
+    if (shared_data->office.sem_1_count > shared_data->office.sem_2_count) {
+        num = shared_data->office.sem_1_count;
+        type = 1;
+    }  else {
+        num = shared_data->office.sem_2_count;
+        type = 2;
+    }   
+
+    if (shared_data->office.sem_3_count > num) {
+        num = shared_data->office.sem_3_count;
+        type = 3;
+    }
+
+    // writing which service is going to be served
+    if (num > 0) {
+        switch (type) {
+            case 1: shared_data->office.sem_1_count--;
+                break;
+            case 2: shared_data->office.sem_2_count--;
+                break;
+            case 3: shared_data->office.sem_3_count--;
+                break;
+            default: break;
+        }
+    }
+    // mutex should end here
+
+    // if there is no one waiting, officer takes a break
+    if (num <= 0) {
+        SM_OfficeBreak(shared_data, process_id, max_break_time);
+
+    // officer serves the service
+    } else {
+
+        // print which service is going to be served
+        char buffer[100] = {0};
+        sprintf(buffer, "U id%d: serving a service of type %d", process_id, type);
+        SM_CounterPrint(shared_data, buffer);
+
+        // calculate how long it takes to serve the service, interval <0, 10> milisec
+        unsigned int time = rand() % 11;    // this time will be sent to the customer process
+
+        // synchronise with targeted customer service front
+        switch (type) {
+            case 1: 
+                shared_data->office.timeout_1 = time;
+                sem_post(&(shared_data->office.sem_1));
+                break;
+            case 2: 
+                shared_data->office.timeout_2 = time;
+                sem_post(&(shared_data->office.sem_2));
+                break;
+            case 3: 
+                shared_data->office.timeout_3 = time;
+                sem_post(&(shared_data->office.sem_3));
+                break;
+            default: break;
+        }
+    
+        // work on the service
+        msec_sleep(time);
+        
+        // print that service is done
+        sprintf(buffer, "U id%d: service finished", process_id);
+        SM_CounterPrint(shared_data, buffer);
+    }
+
+    return 0;
+}
+
+/**
+ * Process which calls this function get's serverd a service which is requested by officer process. (In form of messages).
+ * This function should be called by customer type process. 
+ * 
+ * @param shared_data Pointer to shared_data.
+ * @param process_id Process identifier, but it's not pid_t, it's an another indentification number.
+ * @param type_of_service Type of service which is requested by the process.
+ * @return int return(0) if the process was served correctly, otherwise returns(-1) 
+ */
+int SM_OfficeService(PTListDataPtr shared_data, int process_id, int type_of_service)
+{
+    //go to the front of the queue
+    switch (type_of_service) {
+        case 1:
+            shared_data->office.sem_1_count++;
+            sem_wait(&(shared_data->office.sem_1));
+            break;
+        case 2:
+            shared_data->office.sem_2_count++;
+            sem_wait(&(shared_data->office.sem_2));
+            break;
+        case 3:
+            shared_data->office.sem_3_count++;
+            sem_wait(&(shared_data->office.sem_3));
+            break;
+        default: 
+            fprintf(stderr, "ERROR - SM_OfficeService, wrong type of service\n");
+            return -1;
+    }
+
+    // print that customer is being served
+    char buffer[100] = {0};
+    sprintf(buffer, "Z id%d: called by office worker", process_id);
+    SM_CounterPrint(shared_data, buffer);
+
+    // wait for the service to be done
+    switch (type_of_service) {
+        case 1:
+            msec_sleep(shared_data->office.timeout_1);
+            break;
+        case 2: 
+            msec_sleep(shared_data->office.timeout_2);
+            break;
+        case 3: 
+            msec_sleep(shared_data->office.timeout_3);
+            break;
+        default: break;
+    }
+
+    return 0;
+}
+
+
+
+/* - - - - - - - - - - */
+/*   SLEEP FUNCTIONS   */
+/* - - - - - - - - - - */
+// functions which put process to sleep state
+
+/**
+ * Makes process sleep for n amount of miliseconds, implemented through usleep()
+ * 
+ * @param msec an amount of miliseconds process will sleep
+ * @return int return(0) if the sleep functioned correctly, otherwise returns(-1)  
+ */
+int msec_sleep(long msec)
+{
+    int res = -1;
+    res = usleep(1000 * msec);
     return res;
 }
 
-/* Makes process sleep for random amount of miliseconds*/
+/**
+ *  Makes process sleep for random amount of miliseconds in range <min_msec, max_msec>
+ * 
+ * @param min_msec a minimum amount of miliseconds process will sleep
+ * @param max_msec a maximum amount of miliseconds process will sleep
+ * @return int return(0) if the sleep functioned correctly, otherwise returns(-1)  
+ */
 int ran_msec_sleep(int min_msec, int max_msec)
 {
     // initialising random seed
