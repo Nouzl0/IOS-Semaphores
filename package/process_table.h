@@ -2,7 +2,6 @@
  *  @author Nikolas Nosál (xnosal01@stud.fit.vutbr.cz)
  *  @date 2023-04-24
  */
-
 #pragma once
 
 
@@ -17,8 +16,6 @@
 #include <string.h>
 #include <limits.h>
 #include <stdbool.h>
-#include <errno.h>
-#include <time.h>
 
 // linux libs
 #include <unistd.h>
@@ -43,15 +40,12 @@
 /*    TYPE DEFINITIONS    */
 /* - - - - - - - - - - - -*/
 
-/**
- * Constant macros
-*/
-#define KEY_MAX_SIZE 1000  // process's table (key max length
+/* Constant macros */
+#define KEY_MAX_SIZE 1000   // process's table (key max length
+#define BUFFER_SIZE 200     // size of the print buffer
 
-/**
- *  Macro functions
- */
-#define is_init_pid(list) (list->init_pid.pid == getpid())
+/* Macro functions */
+#define is_init_pid(list) (list->init_pid.pid == getpid())      // check if the process is the one that initialized the process table
 
 
 
@@ -63,21 +57,18 @@
 typedef enum {
     // process has been terminated or is a zombie
     DEAD = 0,
-    // process is sleeping
-    SLEEPING = 1,
     // process is running
-    RUNNING = 2,
+    RUNNING = 1,
 } PTProcessState;
 
 /*States of a semaphore */
 typedef enum {
     // semaphore is not initialized
     SEM_NOT_INIT = 0,
-    // semaphore is being initialized
-    SEM_IN_INIT = 1,
     // semaphore is initialized and being used
-    SEM_INIT = 2,
+    SEM_INIT = 1,
 } PTSemaphoreState;
+
 
 
 /* - - - - - - - - - - - - */
@@ -89,40 +80,26 @@ typedef struct SM_Counter {
     unsigned int data;
     PTSemaphoreState sem_state; 
     sem_t sem_1;
-    int sem_wait_count;
 } SM_Counter;
 
-typedef struct SM_Wait{
-    
-    /* synchronisation data*/
-    sem_t sem;
-    PTSemaphoreState sem_state;
-    pid_t waiting_pid;
-    int processes_passed;
-    int process_count;
-    /* mutex lock data*/
-    sem_t mutex;
-} SM_Wait;
-
-
+/* Shared data if a o process used by Office functions */
 typedef struct SM_Office {
+    // office is open or closed (0 - closed, 1 - open)
     int is_open; 
-    
     // service 1
     sem_t sem_1;
     int sem_1_count;
     unsigned int timeout_1;
-
     // service 2
     sem_t sem_2;
     int sem_2_count;
     unsigned int timeout_2;
-
     // service 3
     sem_t sem_3;
     int sem_3_count;
     unsigned int timeout_3;
 } SM_Office;
+
 
 
 /* - - - - - - - - - - - */
@@ -138,18 +115,6 @@ typedef struct PTProcess {
     // process state
     unsigned int state;
 } *PTProcessPtr;
-
-/* Definition of semaphore */
-typedef struct PTSemaphore {
-    // semaphore controll
-    sem_t *sem;
-    // semaphore state
-    unsigned int state;
-    // number of sleeping processes
-    unsigned int sleeping_p;
-    // number of running processes
-    unsigned int running_p;
-} *PTSemaphore;
 
 /* Tag of a process, which is in a linked list of tags. */
 typedef struct PTListTag {
@@ -173,26 +138,20 @@ typedef struct PTListData {
 
 /**
  * Definition of process_table/list, which is a 1 dimensional array of arrays which arrays.
- * Uses hash function for quicker search and insertion of elements.
- */
+ * Uses hash function for quicker search and insertion of elements.     */
 typedef struct PTList {
-    
     // dynamically alocated 1D array of PTProcess pointers
     struct PTListTag *t_arr;
     // process shared data
     struct PTListData *shared_data;
-    
     // max number of tags in the list
     size_t t_size;
     // max number of processes in one tag
     size_t p_size;
-
     // number of tags in the list
     unsigned int t_num;
-
     // process which initialized the process table
     struct PTProcess init_pid;
-    
 } PTList;
 
 

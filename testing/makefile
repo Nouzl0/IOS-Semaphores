@@ -3,8 +3,9 @@
 # How to use: [ $ make ] or [ $ make clean ]
 
 # tool macros
+# add to CFLAGS later -> -std=gnu99 -Wall -Wextra -Werror -pedantic
 CC = gcc
-CFLAGS = -std=gnu99 -Wall -Wextra -Werror -pedantic
+CFLAGS = -std=gnu99 -Wall -Wextra -pedantic -g
 CLIBS = -pthread -lrt
 
 # path macros

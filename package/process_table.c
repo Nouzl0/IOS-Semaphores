@@ -325,15 +325,14 @@ extern void PT_PrintList(PTList *list)
 int SM_CounterInit(PTListDataPtr shared_data)
 {
     // semaphore is already initialised 
-    if (shared_data->cnt.sem_state == SEM_IN_INIT || shared_data->cnt.sem_state == SEM_INIT) {
+    if (shared_data->cnt.sem_state == SEM_INIT) {
         fprintf(stderr, "ERROR - SM_CounterInit, semaphore is already initialised\n");
         return -1;
     }
     
     // initialising counter data
     shared_data->cnt.sem_state = SEM_INIT;
-    shared_data->cnt.data = 0;
-    shared_data->cnt.sem_wait_count = 0;
+    shared_data->cnt.data = 1;
 
     // initialising semaphore 1
     if (sem_init(&(shared_data->cnt.sem_1), 1, 1) == -1) {
@@ -355,17 +354,10 @@ int SM_CounterInit(PTListDataPtr shared_data)
 int SM_CounterPrint(PTListDataPtr shared_data, FILE *file, char *message)
 {
     // [0] - SEM-WAIT
-    // lost processes are availabled by this data-struct
-    //if (shared_data->cnt.sem_wait_count == 2) {
-    //    sem_post(&(shared_data->cnt.sem_1));
-    //    ran_msec_sleep(50, 150);
-    //}
-
     // increasing number of sleeping processes
-    shared_data->cnt.sem_wait_count++;
-
     if (sem_wait(&(shared_data->cnt.sem_1)) == -1) {
         fprintf(stderr, "ERROR\n");
+        return -1;
     }
 
     // [1] - PRINT
@@ -374,9 +366,6 @@ int SM_CounterPrint(PTListDataPtr shared_data, FILE *file, char *message)
     fflush(file);
 
     // [2] - SEMPOST
-    // decresing the number of processes
-    shared_data->cnt.sem_wait_count--;
-
     if (sem_post(&(shared_data->cnt.sem_1)) == -1) {
         fprintf(stderr, "ERROR - SM_CounterPrint, sem_post failed\n");
         return -1;
@@ -488,7 +477,7 @@ int SM_OfficeDestroy(PTListDataPtr shared_data)
  */
 int SM_OfficeBreak(PTListDataPtr shared_data, FILE *log_file, int process_id, unsigned int max_break_time)
 {
-    char buffer[100] = {0};
+    char buffer[BUFFER_SIZE] = {0};
     int err_value = 0;
 
     // take a break
@@ -561,12 +550,6 @@ int SM_OfficeServe(PTListDataPtr shared_data, FILE *log_file, int process_id, un
 
     // officer serves the service
     } else {
-
-        // print which service is going to be served
-        char buffer[100] = {0};
-        sprintf(buffer, "U %d: serving a service of type %d", process_id, type);
-        SM_CounterPrint(shared_data, log_file, buffer);
-
         // calculate how long it takes to serve the service, interval <0, 10> milisec
         unsigned int time = rand() % 11;    // this time will be sent to the customer process
 
@@ -586,6 +569,11 @@ int SM_OfficeServe(PTListDataPtr shared_data, FILE *log_file, int process_id, un
                 break;
             default: break;
         }
+
+        // print which service is going to be served
+        char buffer[BUFFER_SIZE] = {0};
+        sprintf(buffer, "U %d: serving a service of type %d", process_id, type);
+        SM_CounterPrint(shared_data, log_file, buffer);
     
         // work on the service
         msec_sleep(time);
@@ -610,19 +598,26 @@ int SM_OfficeServe(PTListDataPtr shared_data, FILE *log_file, int process_id, un
  */
 int SM_OfficeService(PTListDataPtr shared_data, FILE *log_file, int process_id, int type_of_service)
 {
+    // set-up message buffer for printing
+    char buffer[BUFFER_SIZE] = {0};
+    sprintf(buffer, "Z %d: called by office worker", process_id);
+
     //go to the front of the queue
     switch (type_of_service) {
         case 1:
             shared_data->office.sem_1_count++;
             sem_wait(&(shared_data->office.sem_1));
+            SM_CounterPrint(shared_data, log_file, buffer);
             break;
         case 2:
             shared_data->office.sem_2_count++;
             sem_wait(&(shared_data->office.sem_2));
+            SM_CounterPrint(shared_data, log_file, buffer);
             break;
         case 3:
             shared_data->office.sem_3_count++;
             sem_wait(&(shared_data->office.sem_3));
+            SM_CounterPrint(shared_data, log_file, buffer);
             break;
         default: 
             fprintf(stderr, "ERROR - SM_OfficeService, wrong type of service\n");
@@ -630,11 +625,9 @@ int SM_OfficeService(PTListDataPtr shared_data, FILE *log_file, int process_id, 
     }
 
     // print that customer is being served
-    char buffer[100] = {0};
-    sprintf(buffer, "Z %d: called by office worker", process_id);
-    SM_CounterPrint(shared_data, log_file, buffer);
+    //SM_CounterPrint(shared_data, log_file, buffer);
 
-    // wait for the service to be done
+    // wait for the service to be done depending on the time officer needs to serve the service
     switch (type_of_service) {
         case 1:
             msec_sleep(shared_data->office.timeout_1);

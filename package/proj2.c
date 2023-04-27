@@ -69,24 +69,23 @@ int main(int argc, char *argv[])
     int err_ret;
     err_ret = SM_CounterInit(list->shared_data);
     err_ret = SM_OfficeInit(list->shared_data);
-    //err_ret = SM_WaitInit(list->shared_data, list->init_pid.pid, (arg_nz + arg_nu));
 
     // check if the shared memory data was initialized
     if (err_ret != 0) {
         fprintf(stderr, "[%s] - Error while initializing semaphores\n", PROGRAM_NAME);
+        PT_Destroy(&list);
         return 1;
     }
 
 
     // [2] - main process creates nz number of customer processes and nu number of officer processes
     // process data variable declarations
-    char buffer[100] = {0};
+    char buffer[BUFFER_SIZE] = {0};
     int tag_num = 0, pro_num = 0;
     
     // create officer/uradnik processes  U
     for (int i = 0; i < arg_nz; i++) {
         if (is_init_pid(list)) {
-            //msec_sleep(1);                  // time required for every process to save it's data
             tag_num = 0, pro_num = i;       // save the process number
             PT_ProcessCreate(list, "Z");    // create the process
         } else {
@@ -97,7 +96,6 @@ int main(int argc, char *argv[])
     // create customer/zakaznik processes Z 
     for (int i = 0; i < arg_nu; i++) {
         if (is_init_pid(list)) {
-            //msec_sleep(1);                  // time required for every process to save it's data
             tag_num = 1, pro_num = i;       // save the process number
             PT_ProcessCreate(list, "U");    // create the process
         } else {
@@ -117,8 +115,8 @@ int main(int argc, char *argv[])
         }
 
         // the main process prints "A: closing\n"
-        SM_CounterPrint(list->shared_data, log_file, "closing");
         SM_OfficeClose(list->shared_data);
+        SM_CounterPrint(list->shared_data, log_file, "closing");
     }
 
 
